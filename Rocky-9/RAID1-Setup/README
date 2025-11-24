@@ -1,0 +1,13 @@
+#####################################################
+#RAID 1 Configuration File
+
+#This ks.cfg file automates the installation of Rocky 9 while configuring RAID 1 mirrored boot drives on the host.
+#Consider the following aspects before using this file:
+
+-The file in question was created using two 32GB boot drives (sda and sdb)
+-You will likely have to adjust drive paths and partition sizes to reflect the original configuration of the host.
+-You can view important info on how the host's RAID 1 setup through several methods including checking /proc/mdstat, the lsblk command, and checking the anaconda-ks.cfg kickstart file present in the /root directory.
+-Adjust the drive names and partition sizes accordingly before using the kickstart file. The values in the kickstart file are in MB.
+-This kickstart file is fully-automated. If an error occurs during use, send feedback to Curtis LeBlanc.
+-If you want to test a less-automated installation, edit the ks.cfg file and change "cmdline" to "text". This will allow you to manually adjust certain settings during installation.
+
