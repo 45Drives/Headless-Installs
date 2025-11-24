@@ -10,4 +10,4 @@
 -Adjust the drive names and partition sizes accordingly before using the kickstart file. The values in the kickstart file are in MB.
 -This kickstart file is fully-automated. If an error occurs during use, send feedback to Curtis LeBlanc.
 -If you want to test a less-automated installation, edit the ks.cfg file and change "cmdline" to "text". This will allow you to manually adjust certain settings during installation.
-
+-The hash for the root password corresponds to "password". Change it to the hash if your required password if needed.
