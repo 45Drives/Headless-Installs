@@ -1,0 +1,9 @@
+################### Basic Autoinstall #####################
+
+The included autoinstall.yaml file here is used to automate the installation of Ubuntu.
+Though the directory is named Ubuntu 22, this file should theoretically work for any Ubuntu release after 20.04.
+This file will create three RAID 1 instances for /boot, /, and swap. 
+The default values are 1GB for /boot, 2GB for swap, and 28GB for /. Depending on the size of the host's boot drives, these values may need to be adjusted.
+The values listed in the autoinstall value are measured in bytes. You'll have to convert the intended value in GBs to bytes.
+Also, remember to replace every instance with the same value as intended on each corresponding partition. The values need to be set on the drive partitions and the RAID partitions using those drive partitions. Make sure they match.
+Example: 30044848128 is set as the size paramenter in raid-2, partition-3, and partition-6 which corresponds to the / partition which typically uses all available free space on the boot drives not used by /boot or swap. Ensure that the value needed for your specific configuration is set the same across all three. 
