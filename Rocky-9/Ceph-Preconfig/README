@@ -1,0 +1,11 @@
+#################### Ceph Preconfig ####################
+
+This Kickstart file automates the installation of Rocky 9 and contains the following functionality:
+-Creates mirrored boot drives (hardcoded to use /dev/sda and /dev/sdb; to be changed if boot drives are different).
+-Creates .repo files for 45Drives and Ceph (hardcoded for latest Squid release; change if needed) during post-installation.
+-Performs core steps of the Rocky9 Ceph Preconfig script (installs 45Drives tools plus Cockpit and associated modules).
+-Installs Cephadm from included Ceph repo and Podman for quick cluster addition/deployment after installation.
+-Sets hostname as "cephnode"; change in script if necessary or manually change post-install.
+-Sets network settings to DHCP for convenience; change manually after installation.
+-Does not create a user on the host; use root to login and create additional users manually when needed.
+-root user password hash set to "password". Change in script or manually post-installation if needed.
