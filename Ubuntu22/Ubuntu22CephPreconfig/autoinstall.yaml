@@ -1,0 +1,290 @@
+#cloud-config
+# See the autoinstall documentation at:
+# https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+autoinstall: 
+  apt:
+    disable_components: []
+    fallback: offline-install
+    geoip: true
+    mirror-selection:
+      primary:
+      - country-mirror
+      - arches: &id001
+        - amd64
+        - i386
+        uri: http://archive.ubuntu.com/ubuntu/
+      - arches: &id002
+        - s390x
+        - arm64
+        - armhf
+        - powerpc
+        - ppc64el
+        - riscv64
+        uri: http://ports.ubuntu.com/ubuntu-ports
+    preserve_sources_list: false
+    security:
+    - arches: *id001
+      uri: http://security.ubuntu.com/ubuntu/
+    - arches: *id002
+      uri: http://ports.ubuntu.com/ubuntu-ports
+  codecs:
+    install: false
+  drivers:
+    install: false
+  identity:
+    hostname: ubuntu22
+    password: $6$x6Vmx6pGCqAIoxoK$w98T3.aTTPdCmlWHKI.1DC2yfxh2EIQXpVfx7na08xtFyJi6X6Yta2nkWji2a8/WfQrw5bHCep3wX4LnwKpYV0
+    realname: user
+    username: user
+  user-data:
+    disable_root: false
+    chpasswd:
+      list:
+        - root:$6$0s1HLA7YnBDAiQQi$r7/jG9GkRGDB4PhFLNRkU01WoJpXw/hSKIk3BNDnNVCgyG6wDGrhf4kb.NPHPO5X3XrBPwLkY6aDMs72hQPjy0
+      expire: false
+    apt:
+      sources:
+        45drives-enterprise-jammy:
+          source: "deb [arch=amd64] https://repo.45drives.com/enterprise/ubuntu jammy main"
+          keyid: 3FBD7E034E80BAF63D5AA9BB9889DBBC731C472B
+        ceph:
+          source: "deb https://download.ceph.com/debian-19.2.3/ jammy main"
+          keyid: 08B73419AC32B4E966C1A330E84AC2C0460F3994
+    packages:
+      - 45drives-tools
+      - cephadm
+      - podman
+      - cockpit
+      - firewalld
+      - cockpit-benchmark
+      - cockpit-navigator
+      - cockpit-file-sharing
+      - cockpit-45drives-hardware
+      - cockpit-identities
+      - realmd
+      - tuned
+      - udisks2-lvm2
+      - samba
+      - winbind
+      - nfs-kernel-server
+      - nfs-client
+      - cockpit-scheduler
+      - nano
+    runcmd:
+      - firewall-cmd --zone=public --permanent --add-service=cockpit 
+      - firewall-cmd --reload
+      - systemctl enable cockpit.socket
+      - |
+        tee /etc/netplan/00-networkmanager.yaml <<'EOF'
+        network:
+          version: 2
+          renderer: NetworkManager
+        EOF
+      - mv /etc/netplan/00-installer-config.yaml /etc/netplan/00-installer-config.yaml.backup
+      - ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+      - mv /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf  /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf.backup
+      - sed -i '/^managed/s/false/true/' /etc/NetworkManager/NetworkManager.conf
+      - systemctl restart NetworkManager
+      - cephadm pull 
+      - apt autoremove --purge -y snapd
+      - touch /etc/cloud/cloud-init.disabled
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  locale: en_US.UTF-8
+  network:
+    ethernets:
+      all-nics:
+        match:
+          name: e*
+        dhcp4: true
+    version: 2
+  oem:
+    install: auto
+  source:
+    id: ubuntu-server
+    search_drivers: false
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  storage:
+    config:
+    - ptable: gpt
+      path: /dev/sda
+      wipe: superblock-recursive
+      preserve: false
+      name: ''
+      grub_device: true
+      id: disk-sda
+      type: disk
+    - ptable: gpt
+      path: /dev/sdb
+      wipe: superblock-recursive
+      preserve: false
+      name: ''
+      grub_device: false
+      id: disk-sdb
+      type: disk
+    - device: disk-sda
+      size: 1048576
+      flag: bios_grub
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-0
+      type: partition
+    - device: disk-sda
+      size: 1073741824
+      wipe: superblock
+      number: 2
+      preserve: false
+      grub_device: false
+      offset: 2097152
+      id: partition-1
+      type: partition
+    - device: disk-sda
+      size: 2147483648
+      wipe: superblock
+      number: 3
+      preserve: false
+      grub_device: false
+      offset: 1075838976
+      id: partition-2
+      type: partition
+    - device: disk-sda
+      size: 30064771072
+      wipe: superblock
+      number: 4
+      preserve: false
+      grub_device: false
+      offset: 3223322624
+      id: partition-3
+      type: partition
+    - device: disk-sdb
+      size: 1073741824
+      wipe: superblock
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-4
+      type: partition
+    - device: disk-sdb
+      size: 2147483648
+      wipe: superblock
+      number: 2
+      preserve: false
+      grub_device: false
+      offset: 1074790400
+      id: partition-5
+      type: partition
+    - device: disk-sdb
+      size: 30064771072
+      wipe: superblock
+      number: 3
+      preserve: false
+      grub_device: false
+      offset: 3222274048
+      id: partition-6
+      type: partition
+    - name: md/boot
+      raidlevel: raid1
+      devices:
+      - partition-1
+      - partition-4
+      spare_devices: []
+      preserve: false
+      wipe: superblock-recursive
+      ptable: gpt
+      id: raid-0
+      type: raid
+    - name: md/swap
+      raidlevel: raid1
+      devices:
+      - partition-2
+      - partition-5
+      spare_devices: []
+      preserve: false
+      wipe: superblock-recursive
+      ptable: gpt
+      id: raid-1
+      type: raid
+    - name: md/root
+      raidlevel: raid1
+      devices:
+      - partition-3
+      - partition-6
+      spare_devices: []
+      preserve: false
+      wipe: superblock-recursive
+      ptable: gpt
+      id: raid-2
+      type: raid
+    - device: raid-0
+      size: 1069547520
+      wipe: superblock
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-7
+      type: partition
+    - fstype: ext4
+      volume: partition-7
+      preserve: false
+      id: format-0
+      type: format
+    - device: raid-1
+      size: 2142240768
+      wipe: superblock
+      flag: swap
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-8
+      type: partition
+    - fstype: swap
+      volume: partition-8
+      preserve: false
+      id: format-1
+      type: format
+    - path: ''
+      device: format-1
+      id: mount-1
+      type: mount
+    - device: raid-2
+      size: 30044848128
+      wipe: superblock
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-9
+      type: partition
+    - fstype: ext4
+      volume: partition-9
+      preserve: false
+      id: format-2
+      type: format
+    - path: /
+      device: format-2
+      id: mount-2
+      type: mount
+    - path: /boot
+      device: format-0
+      id: mount-0
+      type: mount
+    swap:
+      size: 0
+  updates: security
+  version: 1
+  late-commands:
+    - curtin in-target --target=/target -- apt update
+    - curtin in-target --target=/target -- apt upgrade -y
+    - curtin in-target -- sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config

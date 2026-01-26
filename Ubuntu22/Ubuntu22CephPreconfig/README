@@ -1,0 +1,15 @@
+########################### Ubuntu Ceph Preconfig ##########################
+
+This autoinstall file is meant for installing Ubuntu 22 and running the core commands present in our Ubuntu22 Ceph Preconfig script.
+
+Highlights include the following:
+-Configures two 32GB redundant boot drives using sda and sdb.
+-Creates root user with password hash of "password".
+-Creates user named "user" with password hash of "password1".
+-Installs packages listed in script; enables Cockpit.
+-Installs Cephadm (Squid by default) and Podman; pulls down set Ceph container for later use.
+-Configures host to use root password SSH and networkmanager for networking.
+-Installs firewalld, disables ufw, and sets a rule allowing Cockpit.
+-Updates/upgrades host packages.
+
+For further information on how to use this file, consult the guide here: http://192.168.1.91/doku45/doku.php?id=service:serv-ts-_testing_headless_rocky_install:network
