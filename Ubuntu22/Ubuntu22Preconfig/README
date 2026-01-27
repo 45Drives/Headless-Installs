@@ -1,0 +1,14 @@
+#################### Ubuntu22 Preconfig @@@@@@@@@@@@@@@@@@@@@
+
+This autoinstall file is based on our Ubuntu 22 Preconfig script and targets single-server/ZFS deployments. 
+
+The primary functionality of this script is as follows:
+
+-Root user enabled with password hash of "password".
+-SSH using root user and password.
+-Installs listed packages (Houston modules, ZFS, Samba, NFS).
+-Sets NetworkManager as primary networking tool.
+-Enables Cockpit, installs firewalld, disables ufw, and creates firewall rule for Cockpit.
+-Updates/Upgrades system.
+
+For more information on deployment methods, consult this guide: http://192.168.1.91/doku45/doku.php?id=service:serv-ts-_testing_headless_rocky_install:network
