@@ -1,0 +1,5 @@
+##################### Basic Install Network Packages ##################
+
+This is an alternate version of the Basic Install kickstart file that sources installation packages directly from the official repositories rather than from on-disk.
+It is intended for use with hardware-based installations using minimal ISO images.
+It will configure sda as the boot drive and install our 45Drives repo along with 45drives-packages.
