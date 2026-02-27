@@ -1,0 +1,9 @@
+################### UEFI Testing ###########################
+
+This ks.cfg file is intended for testing the implementation of UEFI in Kickstart files. From previous tests, the following can be concluded:
+-The Anaconda installer will absolutely NOT allow you to create an efi partition on more than one drive; installation will fail every time.
+-The addition of the efi partition on one drive will displace the assignment of every other partition on the host as the efi partition takes priority.
+-This results in scenarios like /dev/sda2 mirroring /dev/sdb1, sda3>sdb2, and so on. No actual affect on performance.
+-This ks.cfg file creates a 600MB "dummy" partition for use post-installation for converting into an efi partition for the second drive. Further testing is needed.
+-Booting Rocky on EFI requires you to press "e" on the option to install Rocky Linux, then navigating to the boot line and appending the source of the ks file to the end of that line after 'quiet'. 
+
