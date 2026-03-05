@@ -1,0 +1,15 @@
+####################### Ceph Preconfig UEFI ########################
+
+This is a WIP kickstart file for setting up a Rocky 9 host using UEFI boot mode. 
+What it currently does:
+-Automatically grabs first two detected drives to use as boot drives.
+-Provisions them with RAID1 partitions for /boot/efi and /.
+-Installs 45drives and Cephadm packages (uses latest version of Squid).
+-Performs steps detailed in our Rocky9-Ceph-Preconfig.sh script.
+
+IN TESTING:
+-Includes function that fails the execution of the kickstart file if one of the detected drives has a Ceph partition.
+Note that the Kickstart installer will not display a specialized error message when it fails as a result of this function. Further investigation is required to find a workaround.
+
+HOW TO USE:
+-Consult the guide on how to install on Rocky 9 (UEFI Mode) here: http://192.168.1.91/doku45/doku.php?id=service:serv-ts-_testing_headless_rocky_install:network
