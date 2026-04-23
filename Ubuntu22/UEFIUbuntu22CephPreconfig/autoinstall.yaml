@@ -47,7 +47,7 @@ autoinstall:
       - curl -sSL https://repo.45drives.com/key/gpg.asc | gpg --dearmor -o /usr/share/keyrings/45drives.gpg
       - echo "deb [arch=amd64 signed-by=/usr/share/keyrings/45drives.gpg] https://repo.45drives.com/enterprise/ubuntu jammy main" > /etc/apt/sources.list.d/45drives.list
       - curl -sSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg
-      - echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-19.2.3/ jammy main" > /etc/apt/sources.list.d/ceph.list
+      - echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-reef/ jammy main" > /etc/apt/sources.list.d/ceph.list
       - apt-get update
       - apt-get install -y 45drives-tools cephadm podman cockpit firewalld cockpit-benchmark cockpit-navigator cockpit-file-sharing cockpit-45drives-hardware cockpit-identities realmd tuned udisks2-lvm2 samba winbind nfs-kernel-server nfs-client cockpit-scheduler nano
       # ── Firewall ─────────────────────────────────────────────────────────────
