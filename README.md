@@ -2,6 +2,13 @@
 
 These files are currently for testing purposes only. Do NOT use on customer hardware yet.
 
-Repo for storing Kickstart files and decompiled ISO images.
+Repo for storing Kickstart files.
+To use these files, consult the comments within the files and the documentation present on the 45Drives wiki.
 
-Please read any README files accompanying a ks.cfg file for details on that specific file.
+Relevant articles:
+
+-Testing Headless Installs: Network
+-Adding Kickstart File Directly to Rocky ISO
+-Adding Autoinstall File Directly to Ubuntu ISO
+-Editing a Kickstart File
+-Editing an Autoinstall File
