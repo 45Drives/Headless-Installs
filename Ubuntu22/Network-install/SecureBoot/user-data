@@ -1,0 +1,455 @@
+#cloud-config
+# See the autoinstall documentation at:
+# https://canonical-subiquity.readthedocs-hosted.com/en/latest/reference/autoinstall-reference.html
+autoinstall:
+  apt:
+    disable_components: []
+    fallback: offline-install
+    geoip: true
+    mirror-selection:
+      primary:
+      - country-mirror
+      - arches: &id001
+        - amd64
+        - i386
+        uri: http://archive.ubuntu.com/ubuntu/
+      - arches: &id002
+        - s390x
+        - arm64
+        - armhf
+        - powerpc
+        - ppc64el
+        - riscv64
+        uri: http://ports.ubuntu.com/ubuntu-ports
+    preserve_sources_list: false
+    security:
+    - arches: *id001
+      uri: http://security.ubuntu.com/ubuntu/
+    - arches: *id002
+      uri: http://ports.ubuntu.com/ubuntu-ports
+  codecs:
+    install: false
+  drivers:
+    install: false
+  identity:
+    hostname: ubuntu22
+    password: $6$x6Vmx6pGCqAIoxoK$w98T3.aTTPdCmlWHKI.1DC2yfxh2EIQXpVfx7na08xtFyJi6X6Yta2nkWji2a8/WfQrw5bHCep3wX4LnwKpYV0
+    realname: user
+    username: user
+  user-data:
+    disable_root: false
+    chpasswd:
+      list:
+        - root:$6$0s1HLA7YnBDAiQQi$r7/jG9GkRGDB4PhFLNRkU01WoJpXw/hSKIk3BNDnNVCgyG6wDGrhf4kb.NPHPO5X3XrBPwLkY6aDMs72hQPjy0
+      expire: false
+    runcmd:
+      # ── Repos & packages ─────────────────────────────────────────────────────
+      - curl -sSL https://repo.45drives.com/key/gpg.asc | gpg --dearmor -o /usr/share/keyrings/45drives.gpg
+      - echo "deb [arch=amd64 signed-by=/usr/share/keyrings/45drives.gpg] https://repo.45drives.com/enterprise/ubuntu jammy main" > /etc/apt/sources.list.d/45drives.list
+      - curl -sSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg
+      - echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-reef/ jammy main" > /etc/apt/sources.list.d/ceph.list
+      - apt update
+      - apt install -y cephadm podman network-manager firewalld realmd tuned udisks2-lvm2 samba winbind nfs-kernel-server nfs-client nano
+      # ── Networking ───────────────────────────────────────────────────────────
+      - |
+        tee /etc/netplan/00-networkmanager.yaml <<'EOF'
+        network:
+          version: 2
+          renderer: NetworkManager
+        EOF
+      - mv /etc/netplan/00-installer-config.yaml /etc/netplan/00-installer-config.yaml.backup
+      - ln -sf /run/systemd/resolve/resolv.conf /etc/resolv.conf
+      - mv /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf /usr/lib/NetworkManager/conf.d/10-globally-managed-devices.conf.backup
+      - sed -i '/^managed/s/false/true/' /etc/NetworkManager/NetworkManager.conf
+      - systemctl restart NetworkManager
+      # ── Ceph & cleanup ───────────────────────────────────────────────────────
+      # ── Firewall ─────────────────────────────────────────────────────────────
+      - systemctl start firewalld
+      - cephadm pull
+      - apt autoremove --purge -y snapd
+      - touch /etc/cloud/cloud-init.disabled
+      # ── EFI mirror setup ─────────────────────────────────────────────────────
+      - mkdir -p /boot/efi2
+      - |
+        EFI1_UUID=$(blkid -s UUID -o value /dev/sda1)
+        EFI2_UUID=$(blkid -s UUID -o value /dev/sdb1)
+        sed -i '\|/boot/efi|d' /etc/fstab
+        echo "UUID=${EFI1_UUID}  /boot/efi   vfat  errors=remount-ro,nofail        0  0" >> /etc/fstab
+        echo "UUID=${EFI2_UUID}  /boot/efi2  vfat  errors=remount-ro,nofail,noauto 0  0" >> /etc/fstab
+      # ── grub.d sync script ───────────────────────────────────────────────────
+      - |
+        tee /etc/grub.d/90_copy_to_boot_efi2 <<'EOF'
+        #!/bin/sh
+        # https://wiki.debian.org/UEFI#RAID_for_the_EFI_System_Partition
+        set -e
+
+        if mountpoint --quiet /boot/efi; then
+            mount /boot/efi2 || :
+            rsync --times --recursive --delete /boot/efi/ /boot/efi2/
+            umount /boot/efi2
+        fi
+        exit 0
+        EOF
+      - chmod +x /etc/grub.d/90_copy_to_boot_efi2
+      - bash /etc/grub.d/90_copy_to_boot_efi2
+  early-commands:
+  - |
+    set -e
+
+    # ── CONFIGURE THESE TO MATCH YOUR TARGET DRIVES ──────────────────────────
+    # TARGET_MODELS: pipe-separated model substrings (case-insensitive).
+    # A disk matches if its model contains ANY entry in the list.
+    # Substrings CAN contain spaces. Use | to separate multiple models.
+    # Leave empty ("") to match any model.
+    #
+    # TARGET_SIZE_BYTES: exact byte count from `lsblk -b -d -o NAME,SIZE,MODEL`
+    # A ±1% tolerance is applied to handle firmware/batch variation.
+    # Leave empty ("") to match any size.
+    #
+    # Both conditions must be satisfied if both are set.
+    #
+    # Examples:
+    #   TARGET_MODELS="PASCARI"
+    #   TARGET_MODELS="PASCARI|HDSTOR - HSAV25S"
+    #   TARGET_MODELS="B1201K01|HSAV25ST|MZ7L3480"
+    #   TARGET_SIZE_BYTES="400088457216"
+    TARGET_MODELS=""
+    TARGET_SIZE_BYTES=""
+    # ─────────────────────────────────────────────────────────────────────────
+
+    disk_matches_criteria() {
+      DISK="$1"
+      BASENAME=$(basename "$DISK")
+
+      # Check model if specified — disk matches if ANY token in TARGET_MODELS matches
+      if [ -n "$TARGET_MODELS" ]; then
+        DISK_MODEL=$(cat /sys/block/${BASENAME}/device/model 2>/dev/null || true)
+        MATCHED=0
+        # Split on | — safe with spaces in model names
+        echo "$TARGET_MODELS" | tr '|' '\n' | while IFS= read -r MODEL_TOKEN; do
+          if echo "$DISK_MODEL" | grep -qi "$MODEL_TOKEN"; then
+            echo "1"
+            return
+          fi
+        done | grep -q "1" && MATCHED=1
+        [ "$MATCHED" = "1" ] || return 1
+      fi
+
+      # Check size if specified — ±1% tolerance applied
+      if [ -n "$TARGET_SIZE_BYTES" ]; then
+        DISK_SIZE=$(lsblk -b -d -n -o SIZE "$DISK" 2>/dev/null || true)
+        TOLERANCE=$(( TARGET_SIZE_BYTES / 100 ))
+        LOWER=$(( TARGET_SIZE_BYTES - TOLERANCE ))
+        UPPER=$(( TARGET_SIZE_BYTES + TOLERANCE ))
+        if [ "$DISK_SIZE" -lt "$LOWER" ] || [ "$DISK_SIZE" -gt "$UPPER" ]; then
+          echo "SKIP: ${DISK} — size ${DISK_SIZE} outside range [${LOWER}-${UPPER}]" > /dev/kmsg
+          return 1
+        fi
+      fi
+
+      return 0
+    }
+
+    disk_is_safe() {
+      DISK="$1"
+      for DEV in ${DISK} $(lsblk -ln -o NAME "${DISK}" 2>/dev/null | tail -n +2 | awk '{print "/dev/"$1}'); do
+        TYPE=$(blkid -s TYPE -o value "${DEV}" 2>/dev/null || true)
+        case "$TYPE" in
+          LVM2_member)
+            echo "SKIP: ${DISK} — LVM PV found on ${DEV}" > /dev/kmsg ; return 1 ;;
+          zfs_member)
+            echo "SKIP: ${DISK} — ZFS member found on ${DEV}" > /dev/kmsg ; return 1 ;;
+          ceph_bluestore)
+            echo "SKIP: ${DISK} — Ceph BlueStore OSD found on ${DEV}" > /dev/kmsg ; return 1 ;;
+        esac
+        PARTTYPE=$(blkid -s PART_ENTRY_TYPE -o value "${DEV}" 2>/dev/null || true)
+        case "$PARTTYPE" in
+          4fbd7e29-9d25-41b8-afd0-062c0ceff05d|\
+          45b0969e-9b03-4f30-b4c6-b4b80ceff106|\
+          cafecafe-9b03-4f30-b4c6-b4b80ceff106)
+            echo "SKIP: ${DISK} — Ceph partition GUID found on ${DEV}" > /dev/kmsg ; return 1 ;;
+        esac
+      done
+      return 0
+    }
+
+    VALID_DISKS=""
+    for BYPATH in $(ls /dev/disk/by-path/ | grep -v '\-part[0-9]' | sort); do
+      TARGET=$(readlink -f /dev/disk/by-path/${BYPATH})
+      case "$TARGET" in
+        /dev/sd*|/dev/nvme*)
+          if disk_matches_criteria "${TARGET}" && disk_is_safe "${TARGET}"; then
+            VALID_DISKS="${VALID_DISKS} ${TARGET}"
+            echo "Autoinstall: accepted disk ${TARGET} (${BYPATH})" > /dev/kmsg
+          else
+            echo "Autoinstall: rejected disk ${TARGET} — criteria or safety check failed" > /dev/kmsg
+          fi
+          ;;
+        *)
+          echo "Autoinstall: skipped ${TARGET} — not a supported disk type" > /dev/kmsg
+          ;;
+      esac
+    done
+
+    # Deduplicate (nvme by-path can produce duplicate entries)
+    VALID_DISKS=$(echo $VALID_DISKS | tr ' ' '\n' | sed '/^$/d' | sort -u)
+
+    DISK1=$(echo "$VALID_DISKS" | sed -n '1p')
+    DISK2=$(echo "$VALID_DISKS" | sed -n '2p')
+
+    if [ -z "$DISK1" ] || [ -z "$DISK2" ]; then
+      echo "ERROR: Could not detect two suitable disks. Found: [${VALID_DISKS}]" > /dev/kmsg
+      exit 1
+    fi
+
+    echo "Autoinstall: DISK1=${DISK1}" > /dev/kmsg
+    echo "Autoinstall: DISK2=${DISK2}" > /dev/kmsg
+
+    # Persist disk paths for late-commands — detection cannot be safely
+    # repeated after install because RAID signatures will be present
+    echo "DISK1=${DISK1}" >  /run/autoinstall-disks
+    echo "DISK2=${DISK2}" >> /run/autoinstall-disks
+
+    sed -i "s|DISK1_PATH|${DISK1}|g" /autoinstall.yaml
+    sed -i "s|DISK2_PATH|${DISK2}|g" /autoinstall.yaml
+  kernel:
+    package: linux-generic
+  keyboard:
+    layout: us
+    toggle: null
+    variant: ''
+  locale: en_US.UTF-8
+  network:
+    ethernets:
+      all-nics:
+        match:
+          name: e*
+        dhcp4: true
+    version: 2
+  oem:
+    install: auto
+  source:
+    id: ubuntu-server
+    search_drivers: false
+  ssh:
+    allow-pw: true
+    authorized-keys: []
+    install-server: true
+  storage:
+    config:
+    # ── Disk declarations ─────────────────────────────────────────────────────
+    # DISK1_PATH and DISK2_PATH are replaced at install time by early-commands
+    # with the actual /dev/sdX or /dev/nvmeXnY paths detected from by-path
+    - ptable: gpt
+      path: DISK1_PATH
+      wipe: superblock-recursive
+      preserve: false
+      name: ''
+      grub_device: false
+      id: disk-sda
+      type: disk
+    - ptable: gpt
+      path: DISK2_PATH
+      wipe: superblock-recursive
+      preserve: false
+      name: ''
+      grub_device: false
+      id: disk-sdb
+      type: disk
+
+    # ── sda partitions ────────────────────────────────────────────────────────
+    # sda1 — EFI System Partition (1 GiB, FAT32)
+    - device: disk-sda
+      size: 1073741824
+      flag: boot
+      number: 1
+      preserve: false
+      grub_device: true
+      offset: 1048576
+      id: partition-0
+      type: partition
+
+    # sda2 — RAID1 member for /
+    - device: disk-sda
+      size: -1
+      wipe: superblock
+      number: 2
+      preserve: false
+      grub_device: false
+      offset: 1074790400
+      id: partition-1
+      type: partition
+
+    # ── sdb partitions ────────────────────────────────────────────────────────
+    # sdb1 — mirror ESP (1 GiB, FAT32); noauto in fstab, mounted only by sync script
+    - device: disk-sdb
+      size: 1073741824
+      flag: boot
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-2
+      type: partition
+
+    # sdb2 — RAID1 member for /
+    - device: disk-sdb
+      size: -1
+      wipe: superblock
+      number: 2
+      preserve: false
+      grub_device: false
+      offset: 1074790400
+      id: partition-3
+      type: partition
+
+    # ── EFI formats & mount ───────────────────────────────────────────────────
+    - fstype: fat32
+      volume: partition-0
+      preserve: false
+      id: format-efi
+      type: format
+
+    - path: /boot/efi
+      device: format-efi
+      id: mount-efi
+      type: mount
+
+    # sdb1 formatted FAT32 but not mounted by installer
+    - fstype: fat32
+      volume: partition-2
+      preserve: false
+      id: format-efi-b
+      type: format
+
+    # ── RAID1 array for / ─────────────────────────────────────────────────────
+    - name: md0
+      raidlevel: raid1
+      devices:
+      - partition-1
+      - partition-3
+      spare_devices: []
+      preserve: false
+      wipe: superblock-recursive
+      ptable: gpt
+      id: raid-0
+      type: raid
+
+    # md0p1 — single partition spanning the full RAID array
+    - device: raid-0
+      size: -1
+      wipe: superblock
+      number: 1
+      preserve: false
+      grub_device: false
+      offset: 1048576
+      id: partition-4
+      type: partition
+
+    - fstype: ext4
+      volume: partition-4
+      preserve: false
+      id: format-root
+      type: format
+
+    - path: /
+      device: format-root
+      id: mount-root
+      type: mount
+
+    swap:
+      size: 0
+  updates: security
+  version: 1
+  late-commands:
+    - curtin in-target --target=/target -- apt update
+    - curtin in-target --target=/target -- apt upgrade -y
+    - curtin in-target --target=/target -- sos report --batch
+    - curtin in-target -- sed -i 's/^#*PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+    # ── EFI mirroring: fstab, sync script, second-ESP grub-install, self-test ──
+    # Ubuntu does not mirror UEFI partitions automatically, so this reproduces
+    # the manual procedure using $DISK1/$DISK2 persisted by early-commands.
+    # Do NOT re-detect disks here — by-path lookups are unreliable post-install
+    # once RAID/partition signatures exist.
+    - |
+      set -e
+      LOG=/target/var/log/late-commands-efi2.log
+      touch "$LOG"
+
+      if [ ! -f /run/autoinstall-disks ]; then
+        echo "$(date) ERROR: /run/autoinstall-disks not found" >> "$LOG"
+        exit 1
+      fi
+      . /run/autoinstall-disks
+
+      # Build first-partition path for each disk — sd* uses sdX1, nvme* uses nvmeXnYp1
+      case "$DISK1" in
+        /dev/nvme*) DISK1_PART1="${DISK1}p1" ;;
+        *)          DISK1_PART1="${DISK1}1" ;;
+      esac
+      case "$DISK2" in
+        /dev/nvme*) DISK2_PART1="${DISK2}p1" ;;
+        *)          DISK2_PART1="${DISK2}1" ;;
+      esac
+      echo "$(date) DISK1=${DISK1} DISK1_PART1=${DISK1_PART1}" >> "$LOG"
+      echo "$(date) DISK2=${DISK2} DISK2_PART1=${DISK2_PART1}" >> "$LOG"
+
+      # ── 1. fstab: one entry per EFI partition ──────────────────────────────
+      EFI1_UUID=$(blkid -s UUID -o value "${DISK1_PART1}")
+      EFI2_UUID=$(blkid -s UUID -o value "${DISK2_PART1}")
+      sed -i '\|/boot/efi|d' /target/etc/fstab
+      {
+        echo "UUID=${EFI1_UUID}  /boot/efi   vfat  errors=remount-ro,nofail        0  0"
+        echo "UUID=${EFI2_UUID}  /boot/efi2  vfat  errors=remount-ro,nofail,noauto 0  0"
+      } >> /target/etc/fstab
+      echo "$(date) fstab updated — efi1=${EFI1_UUID} efi2=${EFI2_UUID}" >> "$LOG"
+
+      # ── 2. mountpoint + sync script ─────────────────────────────────────────
+      mkdir -p /target/boot/efi2
+
+      tee /target/etc/grub.d/90_copy_to_boot_efi2 > /dev/null <<'EOF'
+      #!/bin/sh
+      # https://wiki.debian.org/UEFI#RAID_for_the_EFI_System_Partition
+      set -e
+
+      if mountpoint --quiet /boot/efi; then
+          mount /boot/efi2 || :
+          rsync --times --recursive --delete /boot/efi/ /boot/efi2/
+          # Being FAT, it is even better when not mounted, so it won't be damaged
+          # in case of computer crash or power outage
+          # Ref: https://forums.debian.net/viewtopic.php?p=759692&sid=ff62e9207a064b027f041d2cd0a612a4#p759692
+          umount /boot/efi2
+      fi
+      exit 0
+      EOF
+      chmod +x /target/etc/grub.d/90_copy_to_boot_efi2
+      echo "$(date) sync script installed + made executable" >> "$LOG"
+
+      # ── 3. register grub on the second ESP so it's independently bootable ──
+      # --no-nvram: writing UEFI NVRAM boot entries from inside a chroot during
+      # install is unreliable. Register the firmware entry after first boot if
+      # you want it in the boot order: efibootmgr --create --disk $DISK2 \
+      #   --part 1 --loader '\EFI\ubuntu-sdb\shimx64.efi' --label ubuntu-sdb
+      mount "${DISK2_PART1}" /target/boot/efi2
+      rsync -a /target/boot/efi/ /target/boot/efi2/
+      if curtin in-target --target=/target -- grub-install \
+          --target=x86_64-efi \
+          --efi-directory=/boot/efi2 \
+          --bootloader-id=ubuntu-sdb \
+          --no-nvram \
+          --recheck >> "$LOG" 2>&1; then
+        echo "$(date) grub-install to efi2 succeeded" >> "$LOG"
+      else
+        echo "$(date) grub-install to efi2 FAILED (see above)" >> "$LOG"
+      fi
+      umount /target/boot/efi2 || echo "$(date) umount efi2 failed" >> "$LOG"
+
+      # ── 4. self-test: mount → run sync script → confirm auto-unmount ───────
+      curtin in-target --target=/target -- mount /boot/efi2
+      curtin in-target --target=/target -- df -h /boot/efi2 >> "$LOG" 2>&1
+      curtin in-target --target=/target -- bash /etc/grub.d/90_copy_to_boot_efi2 >> "$LOG" 2>&1
+      if curtin in-target --target=/target -- mountpoint --quiet /boot/efi2; then
+        echo "$(date) WARNING: /boot/efi2 still mounted after script — check logic" >> "$LOG"
+      else
+        echo "$(date) OK: /boot/efi2 auto-unmounted after sync script ran" >> "$LOG"
+      fi
