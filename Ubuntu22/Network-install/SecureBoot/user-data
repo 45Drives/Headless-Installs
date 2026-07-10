@@ -42,6 +42,19 @@ autoinstall:
       list:
         - root:$6$0s1HLA7YnBDAiQQi$r7/jG9GkRGDB4PhFLNRkU01WoJpXw/hSKIk3BNDnNVCgyG6wDGrhf4kb.NPHPO5X3XrBPwLkY6aDMs72hQPjy0
       expire: false
+    write_files:
+      - path: /usr/local/bin/cockpit-setup.sh
+        permissions: '0755'
+        owner: root:root
+        content: |
+          #!/bin/bash
+          set -e
+          apt update
+          apt install -y 45drives-tools cockpit cockpit-benchmark cockpit-navigator \
+            cockpit-file-sharing cockpit-45drives-hardware cockpit-identities cockpit-scheduler
+          firewall-cmd --zone=public --permanent --add-service=cockpit
+          firewall-cmd --reload
+          systemctl enable --now cockpit.socket
     runcmd:
       # ── Repos & packages ─────────────────────────────────────────────────────
       - curl -sSL https://repo.45drives.com/key/gpg.asc | gpg --dearmor -o /usr/share/keyrings/45drives.gpg
@@ -50,6 +63,7 @@ autoinstall:
       - echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-reef/ jammy main" > /etc/apt/sources.list.d/ceph.list
       - apt update
       - apt install -y cephadm podman network-manager firewalld realmd tuned udisks2-lvm2 samba winbind nfs-kernel-server nfs-client nano
+      - echo "alias cockpitsetup='/usr/local/bin/cockpit-setup.sh'" >> /etc/bash.bashrc
       # ── Networking ───────────────────────────────────────────────────────────
       - |
         tee /etc/netplan/00-networkmanager.yaml <<'EOF'
